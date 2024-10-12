@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Budget</title>
+    <link rel="stylesheet" href="./main.css">
+    <style>
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            margin: 0 auto;
+            width: 960px;
+        }
+        svg {
+            width: 100%;
+            height: auto;
+        }
+        path.slice {
+            stroke-width: 2px;
+        }
+        polyline {
+            opacity: .3;
+            stroke: black;
+            stroke-width: 2px;
+            fill: none;
+        }
+        .chart-container {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <nav class="menu" role="navigation">
+            <ul>
+                <li><a href="/" aria-label="Homepage">Homepage</a></li>
+                <li><a href="/about.html" aria-label="About">About</a></li>
+                <li><a href="/login.html" aria-label="Login">Login</a></li>
+                <li><a href="https://google.com" aria-label="Google" target="_blank" rel="noopener noreferrer">Google</a></li>
+            </ul>
+        </nav>
+        <section class="hero" role="banner">
+            <h1>Personal Budget</h1>
+            <h2>A personal-budget management app</h2>
+        </section>
+    </header>
+    <main class="container center">
+        <section class="page-area" role="region">
+            <!-- Chart.js Pie Chart -->
+            <article class="text-box">
+                <h2 id="chartjs-chart">Chart.js Pie Chart</h2>
+                <p>
+                    <canvas id="myChart" width="400" height="400"></canvas>
+                </p>
+            </article>
+            <!-- New D3.js Chart Section -->
+            <article class="text-box">
+                <h2 id="d3-chart">D3.js Pie Chart</h2>
+                <button class="randomize">Randomize</button>
+                <div id="d3-chart-container"></div>
+            </article>
+        </section>
+    </main>
+    <footer class="site-footer">
+        <div class="center">
+            <p>All rights reserved &copy; Tejam Reddy Kalam</p>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.7.7/axios.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.3/Chart.bundle.js"></script>
+    <script src="https://d3js.org/d3.v3.min.js"></script>
+
+    <script>
+        // Shared Data Source for both Chart.js and D3.js
+        var dataSource = {
+            datasets: [
+                {
+                    data: [],
+                    backgroundColor: ['#ffcd56', '#ff6384', '#2E7D32', '#fd6b19', '#ababab', '#a03291', '#2910de'],
+                }
+            ],
+            labels: []
+        };
+
+        var myPieChart; // Declare the chart variable globally
+
+        // Function to remove duplicates and sum values for Chart.js
+        function processChartData(data) {
+            const uniqueData = {};
+
+            data.forEach(item => {
+                if (uniqueData[item.title]) {
+                    uniqueData[item.title] += item.budget; // Sum the budget values for duplicates
+                } else {
+                    uniqueData[item.title] = item.budget;
+                }
+            });
+
+            // Convert the unique data back to arrays
+            const labels = Object.keys(uniqueData);
+            const budgetValues = Object.values(uniqueData);
+
+            return { labels, budgetValues };
+        }
+
+        // Chart.js Pie Chart
+        function createChartJS() {
+            var ctx = document.getElementById("myChart").getContext("2d");
+
+            // Destroy the existing chart if it exists
+            if (myPieChart) {
+                myPieChart.destroy();
+            }
+
+            // Create a new chart
+            myPieChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: dataSource.labels,
+                    datasets: [{
+                        data: dataSource.datasets[0].data,
+                        backgroundColor: dataSource.datasets[0].backgroundColor,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: 'Budget Pie Chart'
+                        }
+                    }
+                }
+            });
+        }
+
+        // D3.js Pie Chart
+        var svg = d3.select("#d3-chart-container")
+            .append("svg")
+            .attr("width", 450)
+            .attr("height", 450)
+            .append("g")
+            .attr("transform", "translate(225,225)");
+
+        var width = 450, height = 450, radius = Math.min(width, height) / 2;
+
+        var pie = d3.layout.pie().sort(null).value(function(d) { return d.value; });
+
+        var arc = d3.svg.arc().outerRadius(radius * 0.8).innerRadius(radius * 0.4);
+
+        var color = d3.scale.ordinal()
+            .range(['#ffcd56', '#ff6384', '#2E7D32', '#fd6b19', '#ababab', '#a03291', '#2910de' ]);
+
+        function updateD3Chart(data) {
+            var pieData = data.map(function(d) {
+                return { label: d.title, value: d.budget };
+            });
+
+            var slice = svg.selectAll("path.slice").data(pie(pieData));
+
+            slice.enter().append("path")
+                .attr("class", "slice")
+                .style("fill", function(d, i) { return color(i); });
+
+            slice.transition().duration(1000)
+                .attrTween("d", function(d) {
+                    this._current = this._current || d;
+                    var interpolate = d3.interpolate(this._current, d);
+                    this._current = interpolate(0);
+                    return function(t) { return arc(interpolate(t)); };
+                });
+
+            slice.exit().remove();
+        }
+
+        // Fetch data from the server
+        function getBudget() {
+            axios.get('http://localhost:3000/budget')
+                .then(function (res) {
+                    // Clear existing data in case of multiple fetches
+                    dataSource.datasets[0].data = [];
+                    dataSource.labels = [];
+                    
+                    // Process data to remove duplicates for Chart.js
+                    const processedData = processChartData(res.data.myBudget);
+                    dataSource.datasets[0].data = processedData.budgetValues; // Set unique budget values
+                    dataSource.labels = processedData.labels; // Set unique labels
+
+                    createChartJS(); // Update Chart.js
+                    updateD3Chart(res.data.myBudget); // Update D3.js
+                })
+                .catch(function (error) {
+                    console.error('Error fetching budget data:', error);
+                });
+        }
+
+        getBudget();
+
+        // Randomize D3.js Chart Data
+        d3.select(".randomize").on("click", function() {
+            updateD3Chart(randomData()); // Randomizes only the D3.js chart
+        });
+
+        function randomData() {
+            return dataSource.labels.map(function(label, i) {
+                return { label: label, budget: Math.random() * 100 };
+            });
+        }
+    </script>
+</body>
+</html>
